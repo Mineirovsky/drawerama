@@ -2,7 +2,8 @@ use eframe::egui;
 
 use drawerama::domain::{CategoryId, GroupId, ItemId, Placement};
 
-use super::{DraweramaApp, ItemForm, Screen, dim_controls};
+use super::table::Column;
+use super::{DraweramaApp, ItemForm, Screen, dim_controls, table};
 
 impl DraweramaApp {
     pub(super) fn ui_item(&mut self, ui: &mut egui::Ui, id: Option<ItemId>) {
@@ -225,27 +226,47 @@ impl DraweramaApp {
             .collect();
         if rows.is_empty() {
             ui.label("Every item has a place.");
-        }
-        for (id, name, category) in rows {
-            ui.push_id(id.0, |ui| {
-                ui.horizontal(|ui| {
-                    let mut on = self.selected_unplaced.contains(&id);
-                    if ui.checkbox(&mut on, "").changed() {
-                        if on {
-                            self.selected_unplaced.insert(id);
-                        } else {
-                            self.selected_unplaced.remove(&id);
+        } else {
+            table::show(
+                ui,
+                "unplaced",
+                &[
+                    Column::new("Name"),
+                    Column::new("Category"),
+                    Column::new("Actions"),
+                ],
+                rows.len(),
+                |ui, row, col| {
+                    let (id, name, category) = rows[row].clone();
+                    match col {
+                        0 => {
+                            ui.label(name);
                         }
+                        1 => {
+                            ui.label(category);
+                        }
+                        2 => {
+                            ui.horizontal(|ui| {
+                                let mut on = self.selected_unplaced.contains(&id);
+                                if ui.checkbox(&mut on, "").changed() {
+                                    if on {
+                                        self.selected_unplaced.insert(id);
+                                    } else {
+                                        self.selected_unplaced.remove(&id);
+                                    }
+                                }
+                                if ui.button("Open").clicked() {
+                                    self.open_item(Some(id), Screen::Unplaced);
+                                }
+                                if ui.button("Suggest").clicked() {
+                                    self.open_suggestion(vec![id], Screen::Unplaced);
+                                }
+                            });
+                        }
+                        _ => {}
                     }
-                    if ui.button(&name).clicked() {
-                        self.open_item(Some(id), Screen::Unplaced);
-                    }
-                    ui.label(&category);
-                    if ui.button("Suggest").clicked() {
-                        self.open_suggestion(vec![id], Screen::Unplaced);
-                    }
-                });
-            });
+                },
+            );
         }
     }
 
@@ -272,17 +293,38 @@ impl DraweramaApp {
             .collect();
         if rows.is_empty() {
             ui.label("No matching items.");
-        }
-        for (id, name, category, place) in rows {
-            ui.push_id(id.0, |ui| {
-                ui.horizontal(|ui| {
-                    if ui.button(&name).clicked() {
-                        self.open_item(Some(id), Screen::AllItems);
+        } else {
+            table::show(
+                ui,
+                "all-items",
+                &[
+                    Column::new("Name"),
+                    Column::new("Category"),
+                    Column::new("Location"),
+                    Column::new("Actions"),
+                ],
+                rows.len(),
+                |ui, row, col| {
+                    let (id, name, category, place) = &rows[row];
+                    match col {
+                        0 => {
+                            ui.label(name);
+                        }
+                        1 => {
+                            ui.label(category);
+                        }
+                        2 => {
+                            ui.label(place);
+                        }
+                        3 => {
+                            if ui.button("Open").clicked() {
+                                self.open_item(Some(*id), Screen::AllItems);
+                            }
+                        }
+                        _ => {}
                     }
-                    ui.label(category);
-                    ui.label(place);
-                });
-            });
+                },
+            );
         }
     }
 

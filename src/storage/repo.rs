@@ -226,6 +226,24 @@ impl Store {
         Ok(GroupId(self.conn.last_insert_rowid()))
     }
 
+    pub fn rename_group(&mut self, id: GroupId, name: &str) -> Result<()> {
+        let name = clean_name(name)?;
+        self.ensure_group(id)?;
+        let exists: bool = self.conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM category_group WHERE name = ?1 AND id != ?2)",
+            params![name, id.0],
+            |row| row.get(0),
+        )?;
+        if exists {
+            bail!("A group named \"{name}\" already exists");
+        }
+        self.conn.execute(
+            "UPDATE category_group SET name = ?1 WHERE id = ?2",
+            params![name, id.0],
+        )?;
+        Ok(())
+    }
+
     pub fn delete_group(&mut self, id: GroupId) -> Result<()> {
         let used: bool = self.conn.query_row(
             "SELECT EXISTS(SELECT 1 FROM category WHERE group_id = ?1)",
@@ -260,6 +278,29 @@ impl Store {
             params![group_id.0, name],
         )?;
         Ok(CategoryId(self.conn.last_insert_rowid()))
+    }
+
+    pub fn rename_category(&mut self, id: CategoryId, name: &str) -> Result<()> {
+        let name = clean_name(name)?;
+        self.ensure_category(id)?;
+        let group_id: i64 = self.conn.query_row(
+            "SELECT group_id FROM category WHERE id = ?1",
+            params![id.0],
+            |row| row.get(0),
+        )?;
+        let exists: bool = self.conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM category WHERE group_id = ?1 AND name = ?2 AND id != ?3)",
+            params![group_id, name, id.0],
+            |row| row.get(0),
+        )?;
+        if exists {
+            bail!("That category already exists in this group");
+        }
+        self.conn.execute(
+            "UPDATE category SET name = ?1 WHERE id = ?2",
+            params![name, id.0],
+        )?;
+        Ok(())
     }
 
     pub fn delete_category(&mut self, id: CategoryId) -> Result<()> {
@@ -848,6 +889,32 @@ mod tests {
         assert_eq!(
             store.load().unwrap().item(item).unwrap().placement,
             Placement::Drawer(first)
+        );
+    }
+
+    #[test]
+    fn rename_group_and_category_rejects_a_duplicate_name() {
+        let (_dir, mut store) = store();
+        let textiles = store.create_group("Textiles").unwrap();
+        let chemicals = store.create_group("Chemicals").unwrap();
+        let shirts = store.create_category(textiles, "Shirts").unwrap();
+        store.create_category(textiles, "Blankets").unwrap();
+        let solvents = store.create_category(chemicals, "Solvents").unwrap();
+
+        store.rename_group(textiles, "Fabrics").unwrap();
+        assert_eq!(
+            store.load().unwrap().group(textiles).unwrap().name,
+            "Fabrics"
+        );
+        assert!(store.rename_group(textiles, "Chemicals").is_err());
+
+        store.rename_category(shirts, "Tops").unwrap();
+        assert_eq!(store.load().unwrap().category(shirts).unwrap().name, "Tops");
+        assert!(store.rename_category(shirts, "Blankets").is_err());
+        store.rename_category(solvents, "Tops").unwrap();
+        assert_eq!(
+            store.load().unwrap().category(solvents).unwrap().name,
+            "Tops"
         );
     }
 }

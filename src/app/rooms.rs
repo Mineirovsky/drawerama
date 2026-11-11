@@ -2,7 +2,8 @@ use eframe::egui;
 
 use drawerama::domain::{DrawerId, FurnitureId, FurnitureKind, Placement, RoomId};
 
-use super::{DimDraft, DraweramaApp, Screen, dim_controls, usage_bar};
+use super::table::Column;
+use super::{DimDraft, DraweramaApp, Screen, dim_controls, table, usage_bar};
 
 impl DraweramaApp {
     pub(super) fn ui_rooms(&mut self, ui: &mut egui::Ui) {
@@ -25,19 +26,32 @@ impl DraweramaApp {
             return;
         }
         let rooms = self.snapshot.rooms.clone();
-        for room in rooms {
-            ui.push_id(room.id.0, |ui| {
-                ui.horizontal(|ui| {
-                    if ui.button(&room.name).clicked() {
-                        self.screen = Screen::Room(room.id);
+        table::show(
+            ui,
+            "rooms",
+            &[Column::new("Name"), Column::new("Actions")],
+            rooms.len(),
+            |ui, row, col| {
+                let room = &rooms[row];
+                match col {
+                    0 => {
+                        ui.label(&room.name);
                     }
-                    if ui.button("Delete").clicked() {
-                        let result = self.store.delete_room(room.id);
-                        self.act(result, "Room deleted. Items inside are now unplaced.");
+                    1 => {
+                        ui.horizontal(|ui| {
+                            if ui.button("Open").clicked() {
+                                self.screen = Screen::Room(room.id);
+                            }
+                            if ui.button("Delete").clicked() {
+                                let result = self.store.delete_room(room.id);
+                                self.act(result, "Room deleted. Items inside are now unplaced.");
+                            }
+                        });
                     }
-                });
-            });
-        }
+                    _ => {}
+                }
+            },
+        );
     }
 
     pub(super) fn ui_room(&mut self, ui: &mut egui::Ui, room_id: RoomId) {
@@ -75,27 +89,47 @@ impl DraweramaApp {
             .collect::<Vec<_>>();
         if furniture.is_empty() {
             ui.label("Nothing in this room yet.");
-        }
-        for piece in furniture {
-            ui.push_id(piece.id.0, |ui| {
-                ui.horizontal(|ui| {
+        } else {
+            table::show(
+                ui,
+                "furniture",
+                &[
+                    Column::new("Name"),
+                    Column::new("Kind"),
+                    Column::new("Actions"),
+                ],
+                furniture.len(),
+                |ui, row, col| {
+                    let piece = &furniture[row];
                     let kind = match piece.kind {
                         FurnitureKind::Cabinet => "Cabinet",
                         FurnitureKind::Shelf(_) => "Shelf",
                     };
-                    ui.label(kind);
-                    if ui.button(&piece.name).clicked() {
-                        self.screen = match piece.kind {
-                            FurnitureKind::Cabinet => Screen::Cabinet(piece.id),
-                            FurnitureKind::Shelf(_) => Screen::Shelf(piece.id),
-                        };
+                    match col {
+                        0 => {
+                            ui.label(&piece.name);
+                        }
+                        1 => {
+                            ui.label(kind);
+                        }
+                        2 => {
+                            ui.horizontal(|ui| {
+                                if ui.button("Open").clicked() {
+                                    self.screen = match piece.kind {
+                                        FurnitureKind::Cabinet => Screen::Cabinet(piece.id),
+                                        FurnitureKind::Shelf(_) => Screen::Shelf(piece.id),
+                                    };
+                                }
+                                if ui.button("Delete").clicked() {
+                                    let result = self.store.delete_furniture(piece.id);
+                                    self.act(result, "Removed. Items inside are now unplaced.");
+                                }
+                            });
+                        }
+                        _ => {}
                     }
-                    if ui.button("Delete").clicked() {
-                        let result = self.store.delete_furniture(piece.id);
-                        self.act(result, "Removed. Items inside are now unplaced.");
-                    }
-                });
-            });
+                },
+            );
         }
 
         ui.add_space(12.0);
@@ -153,37 +187,60 @@ impl DraweramaApp {
             .collect::<Vec<_>>();
         if drawers.is_empty() {
             ui.label("No drawers yet.");
-        }
-        let last = drawers.len().saturating_sub(1);
-        for (index, drawer) in drawers.iter().enumerate() {
-            ui.push_id(drawer.id.0, |ui| {
-                ui.horizontal(|ui| {
-                    ui.label(format!("{}.", drawer.position + 1));
-                    if ui.button(&drawer.name).clicked() {
-                        self.screen = Screen::Drawer(drawer.id);
+        } else {
+            let last = drawers.len().saturating_sub(1);
+            table::show(
+                ui,
+                "drawers",
+                &[
+                    Column::new("Name"),
+                    Column::new("Order"),
+                    Column::new("Size"),
+                    Column::new("Actions"),
+                ],
+                drawers.len(),
+                |ui, row, col| {
+                    let drawer = &drawers[row];
+                    match col {
+                        0 => {
+                            ui.label(&drawer.name);
+                        }
+                        1 => {
+                            ui.label((drawer.position + 1).to_string());
+                        }
+                        2 => {
+                            let size = drawer.size;
+                            ui.label(format!(
+                                "{:.0}×{:.0}×{:.0} cm",
+                                size.width, size.height, size.depth
+                            ));
+                        }
+                        3 => {
+                            ui.horizontal(|ui| {
+                                if ui.button("Open").clicked() {
+                                    self.screen = Screen::Drawer(drawer.id);
+                                }
+                                if ui.add_enabled(row > 0, egui::Button::new("Up")).clicked() {
+                                    let result = self.store.move_drawer(drawer.id, -1);
+                                    self.act(result, "Drawer moved");
+                                }
+                                if ui
+                                    .add_enabled(row < last, egui::Button::new("Down"))
+                                    .clicked()
+                                {
+                                    let result = self.store.move_drawer(drawer.id, 1);
+                                    self.act(result, "Drawer moved");
+                                }
+                                if ui.button("Delete").clicked() {
+                                    let result = self.store.delete_drawer(drawer.id);
+                                    self.act(result, "Drawer deleted. Its items are now unplaced.");
+                                }
+                            });
+                        }
+                        _ => {}
                     }
-                    let size = drawer.size;
-                    ui.label(format!(
-                        "{:.0}×{:.0}×{:.0} cm",
-                        size.width, size.height, size.depth
-                    ));
-                    if ui.add_enabled(index > 0, egui::Button::new("Up")).clicked() {
-                        let result = self.store.move_drawer(drawer.id, -1);
-                        self.act(result, "Drawer moved");
-                    }
-                    if ui
-                        .add_enabled(index < last, egui::Button::new("Down"))
-                        .clicked()
-                    {
-                        let result = self.store.move_drawer(drawer.id, 1);
-                        self.act(result, "Drawer moved");
-                    }
-                    if ui.button("Delete").clicked() {
-                        let result = self.store.delete_drawer(drawer.id);
-                        self.act(result, "Drawer deleted. Its items are now unplaced.");
-                    }
-                });
-            });
+                },
+            );
         }
 
         ui.add_space(12.0);
@@ -323,27 +380,46 @@ impl DraweramaApp {
         ui.add_space(8.0);
         if items.is_empty() {
             ui.label("No items here.");
-        }
-        let rows: Vec<_> = items
-            .iter()
-            .map(|item| {
-                let category = self
-                    .snapshot
-                    .category(item.category_id)
-                    .map(|category| category.name.clone())
-                    .unwrap_or_else(|| "Unknown".to_string());
-                (item.id, item.name.clone(), category)
-            })
-            .collect();
-        for (id, name, category) in rows {
-            ui.push_id(id.0, |ui| {
-                ui.horizontal(|ui| {
-                    if ui.button(&name).clicked() {
-                        self.open_item(Some(id), self.screen.clone());
+        } else {
+            let rows: Vec<_> = items
+                .iter()
+                .map(|item| {
+                    let category = self
+                        .snapshot
+                        .category(item.category_id)
+                        .map(|category| category.name.clone())
+                        .unwrap_or_else(|| "Unknown".to_string());
+                    (item.id, item.name.clone(), category)
+                })
+                .collect();
+            let return_to = self.screen.clone();
+            table::show(
+                ui,
+                "placed-items",
+                &[
+                    Column::new("Name"),
+                    Column::new("Category"),
+                    Column::new("Actions"),
+                ],
+                rows.len(),
+                |ui, row, col| {
+                    let (id, name, category) = &rows[row];
+                    match col {
+                        0 => {
+                            ui.label(name);
+                        }
+                        1 => {
+                            ui.label(category);
+                        }
+                        2 => {
+                            if ui.button("Open").clicked() {
+                                self.open_item(Some(*id), return_to.clone());
+                            }
+                        }
+                        _ => {}
                     }
-                    ui.label(category);
-                });
-            });
+                },
+            );
         }
         if ui.button("Add item here").clicked() {
             self.item_form = super::ItemForm {

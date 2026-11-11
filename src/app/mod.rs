@@ -2,6 +2,7 @@ mod categories;
 mod items;
 mod rooms;
 mod suggest_ui;
+mod table;
 
 use eframe::egui;
 
@@ -40,6 +41,7 @@ pub struct DraweramaApp {
     shelf_draft: Option<(FurnitureId, String, DimDraft)>,
     room_draft: Option<(RoomId, String)>,
     furniture_name_draft: Option<(FurnitureId, String)>,
+    rename: Option<RenameDraft>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -54,6 +56,19 @@ enum Screen {
     Unplaced,
     AllItems,
     Suggestion,
+}
+
+#[derive(Clone)]
+struct RenameDraft {
+    target: RenameTarget,
+    name: String,
+    focus: bool,
+}
+
+#[derive(Clone, Copy)]
+enum RenameTarget {
+    Group(GroupId),
+    Category(CategoryId),
 }
 
 #[derive(Clone)]
@@ -159,6 +174,7 @@ impl DraweramaApp {
             shelf_draft: None,
             room_draft: None,
             furniture_name_draft: None,
+            rename: None,
         }
     }
 
@@ -240,22 +256,25 @@ impl eframe::App for DraweramaApp {
             if let Some(status) = &self.status {
                 ui.label(status);
             }
-            egui::ScrollArea::vertical().show(ui, |ui| {
-                let screen = self.screen.clone();
-                match screen {
-                    Screen::Rooms => self.ui_rooms(ui),
-                    Screen::Room(id) => self.ui_room(ui, id),
-                    Screen::Cabinet(id) => self.ui_cabinet(ui, id),
-                    Screen::Drawer(id) => self.ui_drawer(ui, id),
-                    Screen::Shelf(id) => self.ui_shelf(ui, id),
-                    Screen::Categories => self.ui_categories(ui),
-                    Screen::Item(id) => self.ui_item(ui, id),
-                    Screen::Unplaced => self.ui_unplaced(ui),
-                    Screen::AllItems => self.ui_all_items(ui),
-                    Screen::Suggestion => self.ui_suggestion(ui),
-                }
-            });
+            egui::ScrollArea::vertical()
+                .auto_shrink([false, true])
+                .show(ui, |ui| {
+                    let screen = self.screen.clone();
+                    match screen {
+                        Screen::Rooms => self.ui_rooms(ui),
+                        Screen::Room(id) => self.ui_room(ui, id),
+                        Screen::Cabinet(id) => self.ui_cabinet(ui, id),
+                        Screen::Drawer(id) => self.ui_drawer(ui, id),
+                        Screen::Shelf(id) => self.ui_shelf(ui, id),
+                        Screen::Categories => self.ui_categories(ui),
+                        Screen::Item(id) => self.ui_item(ui, id),
+                        Screen::Unplaced => self.ui_unplaced(ui),
+                        Screen::AllItems => self.ui_all_items(ui),
+                        Screen::Suggestion => self.ui_suggestion(ui),
+                    }
+                });
         });
+        self.show_rename_modal(ui.ctx());
     }
 }
 
